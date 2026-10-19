@@ -57,6 +57,23 @@
         
     </div>
 
+    <!-- Win Modal (Congratulation) -->
+    <div id="win-modal" class="hidden absolute inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+        <div class="bg-gray-800 border border-yellow-500 rounded-3xl p-8 max-w-sm w-full text-center shadow-[0_0_40px_rgba(234,179,8,0.3)]">
+            <div class="text-6xl mb-4 animate-bounce">🏆</div>
+            <h2 class="text-3xl font-bold text-white mb-2">Congratulations!</h2>
+            <p class="text-gray-300 mb-8">Kamu berhasil mencapai 2048 dengan Sempurna!</p>
+            <div class="flex flex-col space-y-4">
+                <button onclick="keepPlaying()" class="bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-transform active:scale-95 text-lg">
+                    Lanjut Main Terus! 🚀
+                </button>
+                <button onclick="restartMatch(); hideWinModal();" class="text-gray-400 hover:text-white font-semibold transition-colors">
+                    Mulai Ulang Game
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Bottom Controls -->
     <div class="absolute bottom-6 w-full flex justify-center items-center px-4 z-50 pointer-events-none">
         <div class="pointer-events-auto flex items-center space-x-4 bg-gray-900/80 backdrop-blur-md p-2 rounded-full border border-gray-700 shadow-2xl">
@@ -86,19 +103,19 @@
         const SPACING = 1.3; 
         const OFFSET = (BOARD_SIZE * SPACING) / 2 - (SPACING / 2);
 
-        // Material Design Palette mapped to letters
-        const LETTER_MAP = {
-            2: { letter: 'A', hex: '#2196F3', num: 0x2196F3 }, // Blue
-            4: { letter: 'B', hex: '#00BCD4', num: 0x00BCD4 }, // Cyan
-            8: { letter: 'C', hex: '#009688', num: 0x009688 }, // Teal
-            16: { letter: 'D', hex: '#4CAF50', num: 0x4CAF50 }, // Green
-            32: { letter: 'E', hex: '#FFC107', num: 0xFFC107 }, // Amber
-            64: { letter: 'F', hex: '#FF9800', num: 0xFF9800 }, // Orange
-            128: { letter: 'G', hex: '#FF5722', num: 0xFF5722 }, // Deep Orange
-            256: { letter: 'H', hex: '#F44336', num: 0xF44336 }, // Red
-            512: { letter: 'I', hex: '#E91E63', num: 0xE91E63 }, // Pink
-            1024: { letter: 'J', hex: '#9C27B0', num: 0x9C27B0 }, // Purple
-            2048: { letter: 'K', hex: '#673AB7', num: 0x673AB7 }  // Deep Purple
+        // Material Design Palette for numbers
+        const COLOR_MAP = {
+            2: { hex: '#2196F3', num: 0x2196F3 }, // Blue
+            4: { hex: '#00BCD4', num: 0x00BCD4 }, // Cyan
+            8: { hex: '#009688', num: 0x009688 }, // Teal
+            16: { hex: '#4CAF50', num: 0x4CAF50 }, // Green
+            32: { hex: '#FFC107', num: 0xFFC107 }, // Amber
+            64: { hex: '#FF9800', num: 0xFF9800 }, // Orange
+            128: { hex: '#FF5722', num: 0xFF5722 }, // Deep Orange
+            256: { hex: '#F44336', num: 0xF44336 }, // Red
+            512: { hex: '#E91E63', num: 0xE91E63 }, // Pink
+            1024: { hex: '#9C27B0', num: 0x9C27B0 }, // Purple
+            2048: { hex: '#673AB7', num: 0x673AB7 }  // Deep Purple
         };
 
         // Material Cache to save memory and performance
@@ -108,12 +125,21 @@
         let currentBotIntervalTime = 350;
         let globalAnimMultiplier = 1;
 
+        function getDynamicColor(value) {
+            if (COLOR_MAP[value]) return COLOR_MAP[value];
+            // Warna dinamis untuk angka > 2048 agar bisa terus menerus tak terhingga
+            const logVal = Math.log2(value);
+            const hue = (logVal * 35) % 360;
+            const color = new THREE.Color(`hsl(${hue}, 80%, 50%)`);
+            return { hex: '#' + color.getHexString(), num: color.getHex() };
+        }
+
         function getTileMaterials(value) {
             if (materialCache[value]) return materialCache[value];
 
-            const data = LETTER_MAP[value] || { letter: '?', hex: '#333333', num: 0x333333 };
+            const data = getDynamicColor(value);
             
-            // 1. Create Canvas for the Top Face (Letter)
+            // 1. Create Canvas for the Top Face (Number)
             const canvas = document.createElement('canvas');
             const size = 256;
             canvas.width = size;
@@ -129,12 +155,19 @@
             ctx.lineWidth = 12;
             ctx.strokeRect(6, 6, size-12, size-12);
 
-            // Draw Letter Centered
+            // Draw Number Centered (Dynamic Font Size to fit large numbers)
+            const text = value.toString();
+            let fontSize = 140;
+            if (text.length === 3) fontSize = 110;
+            if (text.length === 4) fontSize = 90;
+            if (text.length === 5) fontSize = 70;
+            if (text.length >= 6) fontSize = 55;
+
             ctx.fillStyle = '#ffffff';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.font = 'bold 160px Inter, sans-serif';
-            ctx.fillText(data.letter, size / 2, size / 2 + 12); // Adjust Y slightly for optical center
+            ctx.font = `bold ${fontSize}px Inter, sans-serif`;
+            ctx.fillText(text, size / 2, size / 2 + (fontSize * 0.08)); 
 
             const texture = new THREE.CanvasTexture(canvas);
             
@@ -170,6 +203,7 @@
                 this.boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
                 this.isAnimating = false;
                 this.isGameOver = false;
+                this.hasWon = false;
 
                 // Setup Three.js
                 this.scene = new THREE.Scene();
@@ -239,6 +273,7 @@
             initGame() {
                 this.overlayEl.classList.add('hidden');
                 this.isGameOver = false;
+                this.hasWon = false;
                 this.score = 0;
                 this.scoreEl.innerText = this.score;
 
@@ -281,6 +316,35 @@
                 this.boardState[r][c] = mesh;
 
                 gsap.to(mesh.scale, { x: 1, y: 1, z: 1, duration: 0.3 * globalAnimMultiplier, ease: "back.out(1.5)" });
+            }
+
+            rescueBot() {
+                // Fitur "God Mode" agar bot bisa terus main sampai skor 999.999
+                let tiles = [];
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (this.boardState[r][c]) {
+                            tiles.push({ r, c, mesh: this.boardState[r][c] });
+                        }
+                    }
+                }
+                
+                // Urutkan dari nilai terkecil
+                tiles.sort((a, b) => a.mesh.userData.value - b.mesh.userData.value);
+                
+                // Hapus 4 tile terkecil agar ada ruang kosong baru
+                const numToRemove = Math.min(4, tiles.length);
+                for (let i = 0; i < numToRemove; i++) {
+                    const t = tiles[i];
+                    const mesh = t.mesh;
+                    gsap.to(mesh.scale, { x: 0, y: 0, z: 0, duration: 0.2, onComplete: () => {
+                        this.tilesGroup.remove(mesh);
+                    }});
+                    this.boardState[t.r][t.c] = null;
+                }
+                
+                this.isGameOver = false;
+                this.overlayEl.classList.add('hidden');
             }
 
             move(direction) {
@@ -340,17 +404,22 @@
                             const targetZ = targetR * SPACING - OFFSET;
 
                             if (targetMesh && targetMesh.userData.value === mesh.userData.value && !mergedThisTurn[targetR][targetC]) {
-                                // MERGE
+                                // MERGE LOGIC FIXED
                                 const newValue = mesh.userData.value * 2;
                                 scoreAdd += newValue;
                                 mergedThisTurn[targetR][targetC] = true;
+
+                                if (newValue >= 2048 && !this.hasWon) {
+                                    this.hasWon = true;
+                                    showWinModal();
+                                }
 
                                 const p = new Promise(resolve => {
                                     gsap.to(mesh.position, {
                                         x: targetX, z: targetZ, duration: 0.15 * globalAnimMultiplier, ease: "power2.inOut",
                                         onComplete: () => {
-                                            this.tilesGroup.remove(mesh);
                                             this.tilesGroup.remove(targetMesh);
+                                            this.tilesGroup.remove(mesh);
                                             
                                             const newMesh = new THREE.Mesh(this.tileGeometry, getTileMaterials(newValue));
                                             newMesh.position.set(targetX, TILE_HEIGHT/2, targetZ);
@@ -361,20 +430,19 @@
                                             this.tilesGroup.add(newMesh);
                                             this.boardState[targetR][targetC] = newMesh;
                                             
-                                            // Bump animation
-                                            newMesh.scale.set(1.4, 1.4, 1.4);
-                                            gsap.to(newMesh.scale, { x: 1, y: 1, z: 1, duration: 0.2 * globalAnimMultiplier, ease: "back.out(2)" });
+                                            newMesh.scale.set(0.5, 0.5, 0.5);
+                                            gsap.to(newMesh.scale, { x: 1, y: 1, z: 1, duration: 0.15 * globalAnimMultiplier, ease: "back.out(2)" });
+                                            
                                             resolve();
                                         }
                                     });
                                 });
                                 promises.push(p);
                             } else {
-                                // SLIDE
+                                // NORMAL MOVE FIXED
                                 this.boardState[targetR][targetC] = mesh;
                                 mesh.userData.r = targetR;
                                 mesh.userData.c = targetC;
-
                                 const p = new Promise(resolve => {
                                     gsap.to(mesh.position, {
                                         x: targetX, z: targetZ, duration: 0.15 * globalAnimMultiplier, ease: "power2.inOut",
@@ -508,12 +576,21 @@
             if (player.isAnimating) return;
             
             if (player.isGameOver) {
-                player.initGame(); // Auto-restart papan jika kalah saat bot berjalan
-                return;
+                // BOT GOD MODE: Jika bot aktif dan belum tembus 999.999, gunakan kekuatan super!
+                if (isBotActive && player.score < 999999) {
+                    player.rescueBot();
+                    return;
+                }
+                
+                // Matikan sistem bot secara global jika kedua pemain mati dan skor tembus target
+                if (player1.isGameOver && player2.isGameOver) {
+                    if (isBotActive) toggleBot();
+                }
+                return; 
             }
 
-            // Algoritma pencarian sudut (Kanan Bawah)
-            const dirs = ['RIGHT', 'DOWN', 'LEFT', 'UP'];
+            // Algoritma pencarian sudut (Corner-seeking: Bawah & Kanan untuk poin besar)
+            const dirs = ['DOWN', 'RIGHT', 'LEFT', 'UP'];
             for (let dir of dirs) {
                 if (player.canMove(dir)) {
                     player.move(dir);
@@ -568,6 +645,20 @@
         function restartMatch() {
             player1.initGame();
             player2.initGame();
+        }
+
+        function showWinModal() {
+            if (isBotActive) toggleBot(); // Pause bot when win modal appears
+            document.getElementById('win-modal').classList.remove('hidden');
+        }
+
+        function keepPlaying() {
+            document.getElementById('win-modal').classList.add('hidden');
+            // User can resume the bot by pressing Space if they want to
+        }
+
+        function hideWinModal() {
+            document.getElementById('win-modal').classList.add('hidden');
         }
 
     </script>
