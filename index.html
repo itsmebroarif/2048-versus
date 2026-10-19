@@ -18,8 +18,11 @@
     <div class="flex w-screen h-screen relative">
         
         <!-- Center Divider line -->
-        <div class="absolute left-1/2 top-0 bottom-0 w-2 bg-gray-900 z-50 transform -translate-x-1/2 shadow-2xl flex items-center justify-center">
-            <div class="bg-gray-900 text-white text-xs font-bold py-4 px-1 rounded-full uppercase tracking-widest border border-gray-700">VS</div>
+        <div class="absolute left-1/2 top-0 bottom-0 w-2 bg-gray-900 z-50 transform -translate-x-1/2 shadow-2xl flex flex-col items-center justify-center">
+            <div id="bot-badge" class="hidden absolute top-6 bg-green-500 text-white text-[10px] font-bold py-1 px-3 rounded-full animate-pulse whitespace-nowrap border border-green-300 shadow-lg">
+                🤖 BOT
+            </div>
+            <div class="bg-gray-900 text-white text-xs font-bold py-4 px-1 rounded-full uppercase tracking-widest border border-gray-700 mt-12">VS</div>
         </div>
 
         <!-- Player 1 (Left) -->
@@ -396,6 +399,31 @@
                 return true;
             }
 
+            canMove(direction) {
+                const vector = {
+                    r: direction === 'UP' ? -1 : direction === 'DOWN' ? 1 : 0,
+                    c: direction === 'LEFT' ? -1 : direction === 'RIGHT' ? 1 : 0
+                };
+
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        const mesh = this.boardState[r][c];
+                        if (mesh) {
+                            const nextR = r + vector.r;
+                            const nextC = c + vector.c;
+
+                            if (nextR >= 0 && nextR < BOARD_SIZE && nextC >= 0 && nextC < BOARD_SIZE) {
+                                const nextCell = this.boardState[nextR][nextC];
+                                if (!nextCell || nextCell.userData.value === mesh.userData.value) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+
             resize() {
                 const width = this.container.clientWidth;
                 const height = this.container.clientHeight;
@@ -412,6 +440,44 @@
 
         // Initialize Players
         let player1, player2;
+        let isBotActive = false;
+        let botInterval = null;
+
+        function toggleBot() {
+            isBotActive = !isBotActive;
+            const badge = document.getElementById('bot-badge');
+            
+            if (isBotActive) {
+                badge.classList.remove('hidden');
+                // Interval diset ke 350ms agar seirama dengan durasi animasi GSAP
+                botInterval = setInterval(() => {
+                    botTick(player1);
+                    botTick(player2);
+                }, 350);
+            } else {
+                badge.classList.add('hidden');
+                clearInterval(botInterval);
+                botInterval = null;
+            }
+        }
+
+        function botTick(player) {
+            if (player.isAnimating) return;
+            
+            if (player.isGameOver) {
+                player.initGame(); // Auto-restart papan jika kalah saat bot berjalan
+                return;
+            }
+
+            // Algoritma pencarian sudut (Kanan Bawah)
+            const dirs = ['RIGHT', 'DOWN', 'LEFT', 'UP'];
+            for (let dir of dirs) {
+                if (player.canMove(dir)) {
+                    player.move(dir);
+                    return;
+                }
+            }
+        }
 
         window.onload = () => {
             // P1 Setup (Darker Grey Background)
@@ -430,6 +496,12 @@
                 // Prevent scrolling with arrows
                 if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) {
                     e.preventDefault();
+                }
+
+                // Toggle Bot
+                if (e.code === 'Space') {
+                    toggleBot();
+                    return;
                 }
 
                 // Player 1 (WASD)
