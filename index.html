@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Split-Screen 2048 3D</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1f2937; font-family: 'Inter', sans-serif; touch-action: none; }
+        .glass-panel { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); color: white; }
+    </style>
+</head>
+<body>
+
+    <!-- Split Screen Container -->
+    <div class="flex w-screen h-screen relative">
+        
+        <!-- Center Divider line -->
+        <div class="absolute left-1/2 top-0 bottom-0 w-2 bg-gray-900 z-50 transform -translate-x-1/2 shadow-2xl flex items-center justify-center">
+            <div class="bg-gray-900 text-white text-xs font-bold py-4 px-1 rounded-full uppercase tracking-widest border border-gray-700">VS</div>
+        </div>
+
+        <!-- Player 1 (Left) -->
+        <div id="p1-container" class="relative w-1/2 h-full bg-gray-800 relative">
+            <div class="absolute top-6 left-6 z-10 glass-panel px-6 py-3 rounded-2xl shadow-lg flex flex-col items-center">
+                <div class="text-xs font-bold text-gray-400 uppercase mb-1">Player 1 (WASD)</div>
+                <div id="p1-score" class="text-3xl font-extrabold leading-none tracking-tight">0</div>
+            </div>
+            <!-- Canvas target -->
+            <div id="p1-canvas" class="w-full h-full"></div>
+            <!-- Game Over Overlay -->
+            <div id="p1-gameover" class="hidden absolute inset-0 bg-black/70 z-20 flex flex-col items-center justify-center text-white">
+                <h2 class="text-4xl font-bold mb-2">Game Over</h2>
+                <p class="text-gray-300">Player 1</p>
+            </div>
+        </div>
+
+        <!-- Player 2 (Right) -->
+        <div id="p2-container" class="relative w-1/2 h-full bg-gray-900 relative">
+            <div class="absolute top-6 right-6 z-10 glass-panel px-6 py-3 rounded-2xl shadow-lg flex flex-col items-center">
+                <div class="text-xs font-bold text-gray-400 uppercase mb-1">Player 2 (Arrows)</div>
+                <div id="p2-score" class="text-3xl font-extrabold leading-none tracking-tight">0</div>
+            </div>
+            <!-- Canvas target -->
+            <div id="p2-canvas" class="w-full h-full"></div>
+            <!-- Game Over Overlay -->
+            <div id="p2-gameover" class="hidden absolute inset-0 bg-black/70 z-20 flex flex-col items-center justify-center text-white">
+                <h2 class="text-4xl font-bold mb-2">Game Over</h2>
+                <p class="text-gray-300">Player 2</p>
+            </div>
+        </div>
+        
+    </div>
+
+    <!-- Restart All -->
+    <div class="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-50">
+        <button onclick="restartMatch()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-full shadow-2xl transition-transform active:scale-95 border-2 border-indigo-400">
+            🔄 Restart Match
+        </button>
+    </div>
+
+    <script>
+        // Data & Config
+        const BOARD_SIZE = 4;
+        const TILE_SIZE = 1.2;
+        const TILE_HEIGHT = 0.4;
+        const SPACING = 1.3; 
+        const OFFSET = (BOARD_SIZE * SPACING) / 2 - (SPACING / 2);
+
+        // Material Design Palette mapped to letters
+        const LETTER_MAP = {
+            2: { letter: 'A', hex: '#2196F3', num: 0x2196F3 }, // Blue
+            4: { letter: 'B', hex: '#00BCD4', num: 0x00BCD4 }, // Cyan
+            8: { letter: 'C', hex: '#009688', num: 0x009688 }, // Teal
+            16: { letter: 'D', hex: '#4CAF50', num: 0x4CAF50 }, // Green
+            32: { letter: 'E', hex: '#FFC107', num: 0xFFC107 }, // Amber
+            64: { letter: 'F', hex: '#FF9800', num: 0xFF9800 }, // Orange
+            128: { letter: 'G', hex: '#FF5722', num: 0xFF5722 }, // Deep Orange
+            256: { letter: 'H', hex: '#F44336', num: 0xF44336 }, // Red
+            512: { letter: 'I', hex: '#E91E63', num: 0xE91E63 }, // Pink
+            1024: { letter: 'J', hex: '#9C27B0', num: 0x9C27B0 }, // Purple
+            2048: { letter: 'K', hex: '#673AB7', num: 0x673AB7 }  // Deep Purple
+        };
+
+        // Material Cache to save memory and performance
+        const materialCache = {};
+
+        function getTileMaterials(value) {
+            if (materialCache[value]) return materialCache[value];
+
+            const data = LETTER_MAP[value] || { letter: '?', hex: '#333333', num: 0x333333 };
+            
+            // 1. Create Canvas for the Top Face (Letter)
+            const canvas = document.createElement('canvas');
+            const size = 256;
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+
+            // Draw Background
+            ctx.fillStyle = data.hex;
+            ctx.fillRect(0, 0, size, size);
+
+            // Draw Inner Border (Optional, for aesthetics)
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.lineWidth = 12;
+            ctx.strokeRect(6, 6, size-12, size-12);
+
+            // Draw Letter Centered
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = 'bold 160px Inter, sans-serif';
+            ctx.fillText(data.letter, size / 2, size / 2 + 12); // Adjust Y slightly for optical center
+
+            const texture = new THREE.CanvasTexture(canvas);
+            
+            // 2. Create Materials
+            const topMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.3, metalness: 0.1 });
+            const sideMat = new THREE.MeshStandardMaterial({ color: data.num, roughness: 0.5 });
+            
+            // BoxGeometry Face Order: 0:Right, 1:Left, 2:Top, 3:Bottom, 4:Front, 5:Back
+            const materials = [
+                sideMat, // Right
+                sideMat, // Left
+                topMat,  // Top (Y+)
+                sideMat, // Bottom
+                sideMat, // Front
+                sideMat  // Back
+            ];
+
+            materialCache[value] = materials;
+            return materials;
+        }
+
+        /**
+         * CLASS: Game Instance 
+         * Manages one player's board, scene, and logic independently.
+         */
+        class GameInstance {
+            constructor(containerId, scoreId, overlayId, bgColor) {
+                this.container = document.getElementById(containerId);
+                this.scoreEl = document.getElementById(scoreId);
+                this.overlayEl = document.getElementById(overlayId);
+                
+                this.score = 0;
+                this.boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+                this.isAnimating = false;
+                this.isGameOver = false;
+
+                // Setup Three.js
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(bgColor);
+
+                const width = this.container.clientWidth;
+                const height = this.container.clientHeight;
+                this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+                // Positioned top-down with a slight angle
+                this.camera.position.set(0, 9, 6);
+                this.camera.lookAt(0, 0, 0);
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(width, height);
+                this.renderer.shadowMap.enabled = true;
+                this.container.appendChild(this.renderer.domElement);
+
+                // Lighting
+                const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+                this.scene.add(ambient);
+                const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                dirLight.position.set(5, 10, 5);
+                dirLight.castShadow = true;
+                this.scene.add(dirLight);
+
+                // Groups
+                this.boardGroup = new THREE.Group();
+                this.scene.add(this.boardGroup);
+                this.tilesGroup = new THREE.Group();
+                this.scene.add(this.tilesGroup);
+
+                this.createBoardBase();
+                
+                // Shared Geometry for all tiles
+                this.tileGeometry = new THREE.BoxGeometry(TILE_SIZE, TILE_HEIGHT, TILE_SIZE);
+
+                this.initGame();
+                this.render();
+            }
+
+            createBoardBase() {
+                // Main board plate
+                const boardWidth = (BOARD_SIZE * SPACING) + 0.4;
+                const geo = new THREE.BoxGeometry(boardWidth, 0.2, boardWidth);
+                const mat = new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.9 });
+                const board = new THREE.Mesh(geo, mat);
+                board.position.y = -0.3;
+                board.receiveShadow = true;
+                this.boardGroup.add(board);
+
+                // Visual empty cells
+                const cellGeo = new THREE.BoxGeometry(TILE_SIZE, 0.05, TILE_SIZE);
+                const cellMat = new THREE.MeshStandardMaterial({ color: 0x4b5563 });
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        const cell = new THREE.Mesh(cellGeo, cellMat);
+                        cell.position.set(
+                            c * SPACING - OFFSET,
+                            -0.18,
+                            r * SPACING - OFFSET
+                        );
+                        this.boardGroup.add(cell);
+                    }
+                }
+            }
+
+            initGame() {
+                this.overlayEl.classList.add('hidden');
+                this.isGameOver = false;
+                this.score = 0;
+                this.scoreEl.innerText = this.score;
+
+                // Clear tiles
+                while(this.tilesGroup.children.length > 0) {
+                    this.tilesGroup.remove(this.tilesGroup.children[0]);
+                }
+                this.boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+
+                this.spawnTile();
+                this.spawnTile();
+            }
+
+            getEmptyCells() {
+                const empty = [];
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (!this.boardState[r][c]) empty.push({r, c});
+                    }
+                }
+                return empty;
+            }
+
+            spawnTile() {
+                const empty = this.getEmptyCells();
+                if (empty.length === 0) return;
+
+                const {r, c} = empty[Math.floor(Math.random() * empty.length)];
+                const value = Math.random() < 0.9 ? 2 : 4; // Spawn A or B
+
+                const mesh = new THREE.Mesh(this.tileGeometry, getTileMaterials(value));
+                mesh.position.set(c * SPACING - OFFSET, TILE_HEIGHT/2, r * SPACING - OFFSET);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                mesh.userData = { value, r, c };
+
+                // Spawn animation
+                mesh.scale.set(0.01, 0.01, 0.01);
+                this.tilesGroup.add(mesh);
+                this.boardState[r][c] = mesh;
+
+                gsap.to(mesh.scale, { x: 1, y: 1, z: 1, duration: 0.3, ease: "back.out(1.5)" });
+            }
+
+            move(direction) {
+                if (this.isAnimating || this.isGameOver) return;
+
+                let moved = false;
+                let promises = [];
+                let scoreAdd = 0;
+
+                let rStart = 0, rEnd = BOARD_SIZE, rStep = 1;
+                let cStart = 0, cEnd = BOARD_SIZE, cStep = 1;
+
+                if (direction === 'DOWN') { rStart = BOARD_SIZE - 1; rEnd = -1; rStep = -1; }
+                if (direction === 'RIGHT') { cStart = BOARD_SIZE - 1; cEnd = -1; cStep = -1; }
+
+                const vector = {
+                    r: direction === 'UP' ? -1 : direction === 'DOWN' ? 1 : 0,
+                    c: direction === 'LEFT' ? -1 : direction === 'RIGHT' ? 1 : 0
+                };
+
+                const mergedThisTurn = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(false));
+
+                for (let r = rStart; r !== rEnd; r += rStep) {
+                    for (let c = cStart; c !== cEnd; c += cStep) {
+                        const mesh = this.boardState[r][c];
+                        if (!mesh) continue;
+
+                        let nextR = r + vector.r;
+                        let nextC = c + vector.c;
+                        let targetR = r;
+                        let targetC = c;
+
+                        while (nextR >= 0 && nextR < BOARD_SIZE && nextC >= 0 && nextC < BOARD_SIZE) {
+                            const nextCell = this.boardState[nextR][nextC];
+                            if (!nextCell) {
+                                targetR = nextR;
+                                targetC = nextC;
+                                nextR += vector.r;
+                                nextC += vector.c;
+                            } else if (nextCell.userData.value === mesh.userData.value && !mergedThisTurn[nextR][nextC]) {
+                                targetR = nextR;
+                                targetC = nextC;
+                                break;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        if (targetR !== r || targetC !== c) {
+                            moved = true;
+                            this.isAnimating = true;
+
+                            const targetMesh = this.boardState[targetR][targetC];
+                            this.boardState[r][c] = null;
+
+                            const targetX = targetC * SPACING - OFFSET;
+                            const targetZ = targetR * SPACING - OFFSET;
+
+                            if (targetMesh && targetMesh.userData.value === mesh.userData.value && !mergedThisTurn[targetR][targetC]) {
+                                // MERGE
+                                const newValue = mesh.userData.value * 2;
+                                scoreAdd += newValue;
+                                mergedThisTurn[targetR][targetC] = true;
+
+                                const p = new Promise(resolve => {
+                                    gsap.to(mesh.position, {
+                                        x: targetX, z: targetZ, duration: 0.15, ease: "power2.inOut",
+                                        onComplete: () => {
+                                            this.tilesGroup.remove(mesh);
+                                            this.tilesGroup.remove(targetMesh);
+                                            
+                                            const newMesh = new THREE.Mesh(this.tileGeometry, getTileMaterials(newValue));
+                                            newMesh.position.set(targetX, TILE_HEIGHT/2, targetZ);
+                                            newMesh.castShadow = true;
+                                            newMesh.receiveShadow = true;
+                                            newMesh.userData = { value: newValue, r: targetR, c: targetC };
+                                            
+                                            this.tilesGroup.add(newMesh);
+                                            this.boardState[targetR][targetC] = newMesh;
+                                            
+                                            // Bump animation
+                                            newMesh.scale.set(1.4, 1.4, 1.4);
+                                            gsap.to(newMesh.scale, { x: 1, y: 1, z: 1, duration: 0.2, ease: "back.out(2)" });
+                                            resolve();
+                                        }
+                                    });
+                                });
+                                promises.push(p);
+                            } else {
+                                // SLIDE
+                                this.boardState[targetR][targetC] = mesh;
+                                mesh.userData.r = targetR;
+                                mesh.userData.c = targetC;
+
+                                const p = new Promise(resolve => {
+                                    gsap.to(mesh.position, {
+                                        x: targetX, z: targetZ, duration: 0.15, ease: "power2.inOut",
+                                        onComplete: resolve
+                                    });
+                                });
+                                promises.push(p);
+                            }
+                        }
+                    }
+                }
+
+                if (moved) {
+                    this.score += scoreAdd;
+                    this.scoreEl.innerText = this.score;
+
+                    Promise.all(promises).then(() => {
+                        this.spawnTile();
+                        this.isAnimating = false;
+                        
+                        if (this.checkGameOver()) {
+                            this.isGameOver = true;
+                            this.overlayEl.classList.remove('hidden');
+                        }
+                    });
+                }
+            }
+
+            checkGameOver() {
+                if (this.getEmptyCells().length > 0) return false;
+
+                // Check possible merges
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        const val = this.boardState[r][c].userData.value;
+                        if (c < BOARD_SIZE - 1 && this.boardState[r][c+1].userData.value === val) return false;
+                        if (r < BOARD_SIZE - 1 && this.boardState[r+1][c].userData.value === val) return false;
+                    }
+                }
+                return true;
+            }
+
+            resize() {
+                const width = this.container.clientWidth;
+                const height = this.container.clientHeight;
+                this.camera.aspect = width / height;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(width, height);
+            }
+
+            render() {
+                requestAnimationFrame(() => this.render());
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+
+        // Initialize Players
+        let player1, player2;
+
+        window.onload = () => {
+            // P1 Setup (Darker Grey Background)
+            player1 = new GameInstance('p1-canvas', 'p1-score', 'p1-gameover', 0x1f2937);
+            
+            // P2 Setup (Darkest Grey Background)
+            player2 = new GameInstance('p2-canvas', 'p2-score', 'p2-gameover', 0x111827);
+
+            window.addEventListener('resize', () => {
+                player1.resize();
+                player2.resize();
+            });
+
+            // Global Key Router
+            window.addEventListener('keydown', (e) => {
+                // Prevent scrolling with arrows
+                if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) {
+                    e.preventDefault();
+                }
+
+                // Player 1 (WASD)
+                switch(e.key.toLowerCase()) {
+                    case 'w': player1.move('UP'); break;
+                    case 's': player1.move('DOWN'); break;
+                    case 'a': player1.move('LEFT'); break;
+                    case 'd': player1.move('RIGHT'); break;
+                }
+
+                // Player 2 (Arrows)
+                switch(e.key) {
+                    case 'ArrowUp': player2.move('UP'); break;
+                    case 'ArrowDown': player2.move('DOWN'); break;
+                    case 'ArrowLeft': player2.move('LEFT'); break;
+                    case 'ArrowRight': player2.move('RIGHT'); break;
+                }
+            });
+        };
+
+        function restartMatch() {
+            player1.initGame();
+            player2.initGame();
+        }
+
+    </script>
+</body>
+</html>
