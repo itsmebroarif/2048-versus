@@ -57,11 +57,25 @@
         
     </div>
 
-    <!-- Restart All -->
-    <div class="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-50">
-        <button onclick="restartMatch()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-full shadow-2xl transition-transform active:scale-95 border-2 border-indigo-400">
-            🔄 Restart Match
-        </button>
+    <!-- Bottom Controls -->
+    <div class="absolute bottom-6 w-full flex justify-center items-center px-4 z-50 pointer-events-none">
+        <div class="pointer-events-auto flex items-center space-x-4 bg-gray-900/80 backdrop-blur-md p-2 rounded-full border border-gray-700 shadow-2xl">
+            <!-- Speed Selector -->
+            <div class="flex items-center space-x-2 px-4 border-r border-gray-600">
+                <label for="bot-speed" class="text-sm font-bold text-gray-300 whitespace-nowrap">⚡ Bot Speed:</label>
+                <select id="bot-speed" onchange="changeBotSpeed()" class="bg-gray-800 text-white font-bold rounded-full px-3 py-1 outline-none text-sm border border-gray-600 cursor-pointer hover:bg-gray-700 transition">
+                    <option value="slow">Slow</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="fast">Fast</option>
+                    <option value="insane">Sangat Cepat</option>
+                </select>
+            </div>
+
+            <!-- Restart All -->
+            <button onclick="restartMatch()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-full shadow-lg transition-transform active:scale-95 border border-indigo-400 flex items-center">
+                🔄 Restart Match
+            </button>
+        </div>
     </div>
 
     <script>
@@ -89,6 +103,10 @@
 
         // Material Cache to save memory and performance
         const materialCache = {};
+
+        // Global Speed & Animation Modifiers
+        let currentBotIntervalTime = 350;
+        let globalAnimMultiplier = 1;
 
         function getTileMaterials(value) {
             if (materialCache[value]) return materialCache[value];
@@ -262,7 +280,7 @@
                 this.tilesGroup.add(mesh);
                 this.boardState[r][c] = mesh;
 
-                gsap.to(mesh.scale, { x: 1, y: 1, z: 1, duration: 0.3, ease: "back.out(1.5)" });
+                gsap.to(mesh.scale, { x: 1, y: 1, z: 1, duration: 0.3 * globalAnimMultiplier, ease: "back.out(1.5)" });
             }
 
             move(direction) {
@@ -329,7 +347,7 @@
 
                                 const p = new Promise(resolve => {
                                     gsap.to(mesh.position, {
-                                        x: targetX, z: targetZ, duration: 0.15, ease: "power2.inOut",
+                                        x: targetX, z: targetZ, duration: 0.15 * globalAnimMultiplier, ease: "power2.inOut",
                                         onComplete: () => {
                                             this.tilesGroup.remove(mesh);
                                             this.tilesGroup.remove(targetMesh);
@@ -345,7 +363,7 @@
                                             
                                             // Bump animation
                                             newMesh.scale.set(1.4, 1.4, 1.4);
-                                            gsap.to(newMesh.scale, { x: 1, y: 1, z: 1, duration: 0.2, ease: "back.out(2)" });
+                                            gsap.to(newMesh.scale, { x: 1, y: 1, z: 1, duration: 0.2 * globalAnimMultiplier, ease: "back.out(2)" });
                                             resolve();
                                         }
                                     });
@@ -359,7 +377,7 @@
 
                                 const p = new Promise(resolve => {
                                     gsap.to(mesh.position, {
-                                        x: targetX, z: targetZ, duration: 0.15, ease: "power2.inOut",
+                                        x: targetX, z: targetZ, duration: 0.15 * globalAnimMultiplier, ease: "power2.inOut",
                                         onComplete: resolve
                                     });
                                 });
@@ -443,17 +461,42 @@
         let isBotActive = false;
         let botInterval = null;
 
+        function changeBotSpeed() {
+            const val = document.getElementById('bot-speed').value;
+            if (val === 'slow') {
+                currentBotIntervalTime = 800; // 0.8 detik per langkah
+                globalAnimMultiplier = 1.5;   // Animasi diperlambat sedikit
+            } else if (val === 'normal') {
+                currentBotIntervalTime = 350; // 0.35 detik per langkah
+                globalAnimMultiplier = 1;     // Animasi standar
+            } else if (val === 'fast') {
+                currentBotIntervalTime = 100; // 0.1 detik per langkah
+                globalAnimMultiplier = 0.3;   // Animasi dipercepat
+            } else if (val === 'insane') {
+                currentBotIntervalTime = 10;  // 10 mili-detik (Kecepatan tertinggi)
+                globalAnimMultiplier = 0.001; // Animasi hampir instan / ter-skip
+            }
+
+            // Jika bot sedang aktif, mulai ulang intervalnya dengan kecepatan yang baru
+            if (isBotActive) {
+                clearInterval(botInterval);
+                botInterval = setInterval(() => {
+                    botTick(player1);
+                    botTick(player2);
+                }, currentBotIntervalTime);
+            }
+        }
+
         function toggleBot() {
             isBotActive = !isBotActive;
             const badge = document.getElementById('bot-badge');
             
             if (isBotActive) {
                 badge.classList.remove('hidden');
-                // Interval diset ke 350ms agar seirama dengan durasi animasi GSAP
                 botInterval = setInterval(() => {
                     botTick(player1);
                     botTick(player2);
-                }, 350);
+                }, currentBotIntervalTime);
             } else {
                 badge.classList.add('hidden');
                 clearInterval(botInterval);
